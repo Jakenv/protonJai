@@ -1,8 +1,21 @@
 URL :: "https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases";
+
 My_Argument_Flags :: Argument_Flags.FREE_ARGUMENTS_ALLOWED|.SORT_HELP|.ALIGN_HELP|.SHOW_HELP_ON_ERROR;
+
 Arguments :: struct {
     list: bool; @"?List available versions"
-    proton: bool; @"?If present it will download latest version"
+    proton: bool; @"?Download choses version see -list" // TODO Add logic to actually be able to download chosen version
+    latest: bool; @"?Just download and install latest version"
+}
+
+Assets :: struct {
+    name: string;
+    browser_download_url: string;
+}
+
+Release :: struct {
+    tag_name: string;
+    assets: [..]Assets;
 }
 
 print_yellow :: (format_string: string, args: .. Any) {
@@ -23,15 +36,20 @@ main :: () {
     header = curl_slist_append(header, "User-Agent: protonget");
 
     if args.list {
-        print_yellow("Getting list of versions");
+        print_yellow("Available verisons");
         {
-            response, code, ok := request(header, URL);
+            response, _, json := request(header, URL);
             defer free(response);
-            print("response body preview:\n%\n", response);
-            print("Response code: %\n", code);
+            for json {
+                if it_index == 0
+                    print("[%]: % (latest)\n", it_index+1, it.tag_name);
+                else
+                    print("[%]: %\n", it_index+1, it.tag_name);
+            }
         }
         return;
     }
+
     if args.proton {
         download(header, URL, target);
         return;
@@ -76,7 +94,7 @@ print_curl_stats :: () {
 
 }
 
-request :: (header: *curl_slist, url: string) -> response_body: string, response_code: int, curl_code: CURLcode {
+request :: (header: *curl_slist, url: string) -> response_body: string, response_code: int, parsed_data: []Release, curl_code: CURLcode {
     handle = curl_easy_init();
     assert(handle != null);
     defer curl_easy_cleanup(handle);
@@ -97,7 +115,11 @@ request :: (header: *curl_slist, url: string) -> response_body: string, response
     if curl_code == .OK  curl_easy_getinfo(handle, .RESPONSE_CODE, *response_code);
     response_body: string = builder_to_string(*builder);
 
-    return response_body, response_code, curl_code;
+    // data, ok := parse_value(response_body);
+
+    ok, parsed_data := json_parse_string(response_body, []Release);
+
+    return response_body, response_code, parsed_data, curl_code;
 }
 
 download :: (header: curl_slist, url: string, target: string) -> bool {
