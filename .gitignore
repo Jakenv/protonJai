@@ -1,2 +1,13 @@
 .build/
 bin/
+modules/jaison
+*.so
+
+*.dll
+*.exp
+*.lib
+*.pdb
+
+.DS_Store
+*.dSYM
+*.dylib

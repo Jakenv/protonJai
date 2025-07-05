@@ -1,6 +1,7 @@
 #import "Basic";
 #import "Compiler";
 #import "File";
+#import "String";
 
 #run {
     set_build_options_dc(.{do_output=false});
@@ -8,6 +9,9 @@
 
     root_options := get_build_options();
     args := root_options.compile_time_command_line;
+    import_path: [..] string;
+    array_add(*import_path, .. root_options.import_path);
+    array_add(*import_path, "./modules");
 
     ok: bool;
     {
@@ -19,35 +23,6 @@
 
         set_build_options(options, w);
 
-        tracy: *Metaprogram_Plugin;
-        flags: Intercept_Flags;
-        if tracy && tracy.before_intercept tracy.before_intercept(tracy, *flags);
-
-        compiler_begin_intercept(w, flags);
-        if tracy && tracy.add_source tracy.add_source(tracy);
         add_build_file("./src/main.jai", w);
-        ok = message_loop(w, args, tracy);
-        compiler_end_intercept(w);
-
-        if tracy && tracy.finish tracy.finish(tracy);
-        if tracy && tracy.shutdown tracy.shutdown(tracy);
     }
-}
-message_loop :: (w: Workspace, args: []string, tracy: *Metaprogram_Plugin) -> bool {
-    options := get_build_options(w);
-
-    while true {
-        message := compiler_wait_for_message();
-        if tracy && tracy.message tracy.message(tracy, message);
-        if message.kind != .COMPLETE continue;
-
-        complete := cast(*Message_Complete) message;
-        if complete.error_code != .NONE {
-            return false;
-        }
-
-        break;
-    }
-
-    return true;
 }

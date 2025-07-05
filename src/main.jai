@@ -1,4 +1,3 @@
-// URL :: "https://github.com/GloriousEggroll/proton-ge-custom/releases/download/GE-Proton10-4/GE-Proton10-4.tar.gz";
 URL :: "https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases";
 My_Argument_Flags :: Argument_Flags.FREE_ARGUMENTS_ALLOWED|.SORT_HELP|.ALIGN_HELP|.SHOW_HELP_ON_ERROR;
 Arguments :: struct {
@@ -136,6 +135,7 @@ download :: (header: curl_slist, url: string, target: string) -> bool {
 handle: *CURL;
 
 #import "Curl";
+#import "jaison";
 #import "Basic";
 #import "String";
 #import "File";

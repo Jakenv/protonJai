@@ -1,0 +1,3 @@
+[submodule "modules/jaison"]
+           path = modules/jaison
+           url = https://github.com/rluba/jaison.git
