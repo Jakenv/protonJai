@@ -1,3 +1,7 @@
 [submodule "modules/jaison"]
            path = modules/jaison
            url = https://github.com/rluba/jaison.git
+
+[submodule "modules/jai-libarchive"]
+           path = modules/jai-libarchive
+           url = https://github.com/Jakenv/jai-libarchive.git

@@ -37,7 +37,6 @@ main :: () {
         return;
     }
 
-    target := "proton.tar.gz";
     if args.list {
         print_yellow("Available versions");
         {
@@ -71,7 +70,8 @@ main :: () {
             }
         }
         free(response_body);
-        download(url, name);
+        filename := download(url, name);
+        extract_archive(filename);
         return;
     }
 
@@ -107,11 +107,10 @@ print_curl_stats :: (curl: *CURL) {
     curl_easy_getinfo(curl, .SPEED_DOWNLOAD, *download_speed);
     curl_easy_getinfo(curl, .SIZE_DOWNLOAD,  *size_downloaded);
 
-    print("Time: %s, Speed: %MB/s, Downloaded: %MB\n",
+    print("\rTime: %s, Speed: %MB/s, Downloaded: %MB",
           cast(int) total_time,
           cast(int)(download_speed / 1024.0 / 1024.0),
           cast(int)(size_downloaded / 1024.0 / 1024.0));
-
 }
 
 request_info :: (url: string) -> response_body: string, response_code: int, curl_code: CURLcode {
@@ -141,7 +140,7 @@ request_info :: (url: string) -> response_body: string, response_code: int, curl
     return response_body, response_code, curl_code;
 }
 
-download :: (url: string, target: string) -> bool {
+download :: (url: string, target: string) -> target: string, bool {
     curl := curl_easy_init();
     assert(curl != null);
     defer curl_easy_cleanup(curl);
@@ -155,7 +154,7 @@ download :: (url: string, target: string) -> bool {
     out_file, ok := file_open(target, for_writing=true);
     if !ok {
         print("Failed to open the output file '%' for storing the download.\n", target);
-        return false;
+        exit(1);
     }
     defer file_close(*out_file);
     request: Request;
@@ -164,7 +163,6 @@ download :: (url: string, target: string) -> bool {
 
     curl_easy_setopt(curl, .WRITEFUNCTION, write_file_callback);
     curl_easy_setopt(curl, .WRITEDATA, *request);
-    print("Url % \n", url);
     print("Downloading %...\n", target);
 
     res := curl_easy_perform(curl);
@@ -172,16 +170,58 @@ download :: (url: string, target: string) -> bool {
         error_message := to_string(curl_easy_strerror(res));
         defer free(error_message);
         print("Curl Error: %\n", error_message);
-        return false;
+        exit(1);
     }
     print_curl_stats(curl);
+    print("\n");
     print("File % downloaded successfully!\n", target);
+
+    return target, true;
+}
+
+extract_archive :: (filename: string) -> bool {
+    print("Extracting the file %\n", filename);
+
+    a: *archive = archive_read_new();
+    ext: *archive = archive_write_disk_new();
+    entry: *archive_entry;
+
+    spinner: [4]string = .["|", "/", "-", "\\"];
+    spin_idx: int = 0;
+
+    defer archive_read_close(a) && archive_read_free(a);
+    defer archive_write_close(ext) && archive_write_free(a);
+
+    archive_read_support_format_tar(a);
+    archive_read_support_filter_gzip(a);
+
+    if archive_read_open_filename(a, temp_c_string(filename), 10240) != ARCHIVE_OK {
+        log("Opening file failed\n");
+        return false;
+    }
+
+    while archive_read_next_header(a, *entry) == ARCHIVE_OK {
+        archive_write_header(ext, entry);
+        buffer: *void;
+        size: u64;
+        offset: la_int64_t;
+        print("\rExtracting... %", spinner[spin_idx]);
+        spin_idx = (spin_idx + 1) % 4;
+        while archive_read_data_block(a, *buffer, *size, *offset) == ARCHIVE_OK {
+            archive_write_data_block(ext, buffer, size, offset);
+        }
+    }
+    _, left, _ := split_from_left(filename, #char ".");
+    print("\n");
+    print("File Extracted, mv % ~/.steam/steam/compatibilitytools.d/\n", left);
+
     return true;
 }
 
-#import "Curl";
-#import "jaison";
 #import "Basic";
-#import "String";
-#import "File";
 #import "Command_Line";
+#import "Curl";
+#import "File";
+#import "jaison";
+#import "jai-libarchive";
+#import "String";
