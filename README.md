@@ -1,5 +1,8 @@
 # ProtonJai
-## Small cli (for now) app to download latest version of ProtonGE
+Small cli (for now) app to download latest version of ProtonGE
+
+> [!WARNING]
+> Very work in progress, I want to first get normal cli to work and later on experiment and add gui
 
 ### Building
 
