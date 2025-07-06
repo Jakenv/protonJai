@@ -1,7 +1,5 @@
 .build/
 bin/
-modules/jaison
-modules/jai-libarchive
 .project.gf
 *.so
 
