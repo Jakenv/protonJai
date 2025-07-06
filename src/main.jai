@@ -1,5 +1,6 @@
 URL :: "https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases";
 LATEST_URL :: "https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/latest";
+DOWNLOAD_DIR :: "/tmp/protonjai";
 
 My_Argument_Flags :: Argument_Flags.FREE_ARGUMENTS_ALLOWED|.SORT_HELP|.ALIGN_HELP|.SHOW_HELP_ON_ERROR;
 
@@ -38,27 +39,35 @@ main :: () {
     }
 
     if args.list {
+        installed_protons := check_paths();
         print_yellow("Available versions");
         {
             response_body := request_info(URL);
             defer free(response_body);
             ok, parsed_data := json_parse_string(response_body, []Release);
-
+            // I don't like this but for now it's enough
+            for install, i_index: installed_protons {
+                for *version, v_index: parsed_data {
+                    if contains(version.tag_name, install) {
+                        version.tag_name = join(version.tag_name, " (installed)");
+                    }
+                }
+            }
             for parsed_data {
-                if it_index == 0
-                print("[%]:\t % (latest)\n", it_index+1, it.tag_name);
-                else
-                    print("[%]:\t %\n", it_index+1, it.tag_name);
+                if it_index == 0 print("[%]:\t % (latest)\n", it_index+1, it.tag_name);
+                else print("[%]:\t % \n", it_index+1, it.tag_name);
             }
         }
         return;
     }
 
     if args.proton {
+        check_paths();
         return;
     }
 
     if args.latest {
+        _, steam_path := check_paths();
         response_body := request_info(LATEST_URL);
         ok, parsed_data := json_parse_string(response_body, Release);
         name, url: string;
@@ -71,11 +80,42 @@ main :: () {
         }
         free(response_body);
         filename := download(url, name);
-        extract_archive(filename);
+        extract_archive(filename, steam_path);
+
         return;
     }
 
     print("-help for list of commands\n"); return;
+}
+
+// I have no idea how else I could modify visit_direcotires flag other wise so copying the function it is lol
+// File_visit_Info struct is from File_Utilities module
+my_file_list :: (path: string, recursive := false, follow_directory_symlinks := true) -> [] string {
+    files : [..] string;
+
+    visitor :: (info: *File_Visit_Info, user_data: *[..] string) {
+        array_add(user_data, copy_string(info.full_name));
+    }
+
+    visit_files(path, recursive, *files, visitor, follow_directory_symlinks=follow_directory_symlinks, visit_directories=true);
+
+    return files;
+}
+
+check_paths :: () -> installed_protons: [..]string, steam_path: string {
+    username := get_username();
+    home_dir := get_home_directory(username);
+    steam_path := join(home_dir, "/.steam/steam/compatibilitytools.d");
+    assert(is_directory(steam_path) == true);
+
+    installed_protons: [..] string;
+    paths_of_installed_protons := my_file_list(steam_path);
+    for paths_of_installed_protons {
+        _, _, right := split_from_right(it, #char "/");
+        array_add(*installed_protons, copy_string(right));
+    }
+
+    return installed_protons, steam_path;
 }
 
 write_string_callback :: (contents: *u8, count: u64, size: u64, text: *void) -> u64 #c_call {
@@ -140,16 +180,20 @@ request_info :: (url: string) -> response_body: string, response_code: int, curl
     return response_body, response_code, curl_code;
 }
 
-download :: (url: string, target: string) -> target: string, bool {
+download :: (url: string, target: string) -> target: string, bool, response_code: int {
     curl := curl_easy_init();
     assert(curl != null);
     defer curl_easy_cleanup(curl);
+
     header: *curl_slist;
     header = curl_slist_append(header, "User-Agent: protonget");
 
     curl_easy_setopt(curl, .HTTPHEADER, header);
     curl_easy_setopt(curl, .FOLLOWLOCATION, 1);
     curl_easy_setopt(curl, .URL, temp_c_string(url));
+
+    make_directory_if_it_does_not_exist(DOWNLOAD_DIR);
+    set_working_directory(DOWNLOAD_DIR);
 
     out_file, ok := file_open(target, for_writing=true);
     if !ok {
@@ -165,22 +209,21 @@ download :: (url: string, target: string) -> target: string, bool {
     curl_easy_setopt(curl, .WRITEDATA, *request);
     print("Downloading %...\n", target);
 
-    res := curl_easy_perform(curl);
-    if res != .OK {
-        error_message := to_string(curl_easy_strerror(res));
-        defer free(error_message);
-        print("Curl Error: %\n", error_message);
-        exit(1);
-    }
+    curl_code := curl_easy_perform(curl);
+
+    response_code: int;
+    if curl_code == .OK  curl_easy_getinfo(curl, .RESPONSE_CODE, *response_code);
+
     print_curl_stats(curl);
     print("\n");
     print("File % downloaded successfully!\n", target);
 
-    return target, true;
+    return target, true, response_code;
 }
 
-extract_archive :: (filename: string) -> bool {
+extract_archive :: (filename: string, extraction_path: string) -> bool {
     print("Extracting the file %\n", filename);
+    set_working_directory(DOWNLOAD_DIR);
 
     a: *archive = archive_read_new();
     ext: *archive = archive_write_disk_new();
@@ -189,9 +232,14 @@ extract_archive :: (filename: string) -> bool {
     spinner: [4]string = .["|", "/", "-", "\\"];
     spin_idx: int = 0;
 
-    defer archive_read_close(a) && archive_read_free(a);
-    defer archive_write_close(ext) && archive_write_free(a);
+    defer {
+        archive_read_close(a);
+        archive_read_close(a);
+        archive_write_close(ext);
+        archive_write_free(a);
+    }
 
+    extraction_path_for_c := join(extraction_path, "/");
     archive_read_support_format_tar(a);
     archive_read_support_filter_gzip(a);
 
@@ -201,19 +249,24 @@ extract_archive :: (filename: string) -> bool {
     }
 
     while archive_read_next_header(a, *entry) == ARCHIVE_OK {
+        og_path := archive_entry_pathname(entry);
+
+        final_path := join(extraction_path_for_c, to_string(og_path));
+        archive_entry_set_pathname(entry, to_c_string(final_path));
+
         archive_write_header(ext, entry);
         buffer: *void;
         size: u64;
         offset: la_int64_t;
+
         print("\rExtracting... %", spinner[spin_idx]);
         spin_idx = (spin_idx + 1) % 4;
         while archive_read_data_block(a, *buffer, *size, *offset) == ARCHIVE_OK {
             archive_write_data_block(ext, buffer, size, offset);
         }
     }
-    _, left, _ := split_from_left(filename, #char ".");
     print("\n");
-    print("File Extracted, mv % ~/.steam/steam/compatibilitytools.d/\n", left);
+    print("Proton installed to %\n", extraction_path);
 
     return true;
 }
@@ -222,6 +275,8 @@ extract_archive :: (filename: string) -> bool {
 #import "Command_Line";
 #import "Curl";
 #import "File";
+#import "File_Utilities";
 #import "jaison";
 #import "jai-libarchive";
 #import "String";
+#import "System";
