@@ -74,7 +74,7 @@ main :: () {
             _, parsed_data := json_parse_string(response_body, Release);
 
             if array_find(installed_protons, parsed_data.tag_name) {
-                print("Proton already installed! Do you want to reinstall y/n?\n");
+                print("Proton % already installed! Do you want to reinstall y/n?\n", parsed_data.tag_name);
                 if !user_input() return;
             }
 
@@ -112,7 +112,7 @@ user_input :: () -> bool {
         }
         if bytes_read {
             input.count += bytes_read;
-            if begins_with(input, "y") {
+            if begins_with(input, "y") || begins_with(input, "Y") {
                 reinstall = true;
                 break;
             } else {
@@ -139,8 +139,6 @@ my_file_list :: (path: string, recursive := false, follow_directory_symlinks := 
 }
 
 check_paths :: () -> installed_protons: [..]string, steam_path: string {
-    // username := get_username();
-    // home_dir := get_home_directory(username);
     steam_path := join(get_home_directory(get_username()), "/.steam/steam/compatibilitytools.d");
     assert(is_directory(steam_path) == true);
 
