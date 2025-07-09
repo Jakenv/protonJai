@@ -67,25 +67,61 @@ main :: () {
     }
 
     if args.latest {
-        _, steam_path := check_paths();
-        response_body := request_info(LATEST_URL);
-        ok, parsed_data := json_parse_string(response_body, Release);
-        name, url: string;
-        for parsed_data.assets {
-            if contains(it.name, "tar.gz") && contains(it.browser_download_url, "tar.gz") {
-                name = it.name;
-                url = it.browser_download_url;
-                break;
-            }
-        }
-        free(response_body);
-        filename := download(url, name);
-        extract_archive(filename, steam_path);
+        print_yellow("Installing latest!");
+        {
+            installed_protons, steam_path := check_paths();
+            response_body := request_info(LATEST_URL);
+            _, parsed_data := json_parse_string(response_body, Release);
 
+            if array_find(installed_protons, parsed_data.tag_name) {
+                print("Proton already installed! Do you want to reinstall y/n?\n");
+                if !user_input() return;
+            }
+
+            name, url: string;
+            for parsed_data.assets {
+                if contains(it.name, "tar.gz") && contains(it.browser_download_url, "tar.gz") {
+                    name = it.name;
+                    url = it.browser_download_url;
+                    break;
+                }
+            }
+            free(response_body);
+            filename := download(url, name);
+            extract_archive(filename, steam_path);
+        }
         return;
     }
 
     print("-help for list of commands\n"); return;
+}
+
+user_input :: () -> bool {
+    BUFFER_SIZE :: 1024;
+    buffer: [BUFFER_SIZE] u8;
+    input: string;
+    input.data = buffer.data;
+
+    reinstall: bool;
+
+    while true {
+        bytes_read := read(STDIN_FILENO, buffer.data + input.count, cast(u64) (buffer.count - input.count));
+        if bytes_read < 0 {
+            log_error("Couldn't read from stdin");
+            exit(1);
+        }
+        if bytes_read {
+            input.count += bytes_read;
+            if begins_with(input, "y") {
+                reinstall = true;
+                break;
+            } else {
+                reinstall = false;
+                break;
+            }
+        }
+    }
+    return reinstall;
 }
 
 // I have no idea how else I could modify visit_direcotires flag other wise so copying the function it is lol
@@ -103,9 +139,9 @@ my_file_list :: (path: string, recursive := false, follow_directory_symlinks := 
 }
 
 check_paths :: () -> installed_protons: [..]string, steam_path: string {
-    username := get_username();
-    home_dir := get_home_directory(username);
-    steam_path := join(home_dir, "/.steam/steam/compatibilitytools.d");
+    // username := get_username();
+    // home_dir := get_home_directory(username);
+    steam_path := join(get_home_directory(get_username()), "/.steam/steam/compatibilitytools.d");
     assert(is_directory(steam_path) == true);
 
     installed_protons: [..] string;
@@ -229,7 +265,7 @@ extract_archive :: (filename: string, extraction_path: string) -> bool {
     ext: *archive = archive_write_disk_new();
     entry: *archive_entry;
 
-    spinner: [4]string = .["|", "/", "-", "\\"];
+    spinner :: string.["|", "/", "-", "\\"];
     spin_idx: int = 0;
 
     defer {
@@ -280,3 +316,4 @@ extract_archive :: (filename: string, extraction_path: string) -> bool {
 #import "jai-libarchive";
 #import "String";
 #import "System";
+#import "POSIX";

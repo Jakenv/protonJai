@@ -2,6 +2,7 @@
 bin/
 .project.gf
 *.so
+*.codex
 
 *.dll
 *.exp
