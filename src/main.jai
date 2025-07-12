@@ -6,7 +6,7 @@ My_Argument_Flags :: Argument_Flags.FREE_ARGUMENTS_ALLOWED|.SORT_HELP|.ALIGN_HEL
 
 Arguments :: struct {
     list: bool; @"?List available versions"
-    proton: bool; @"?Download choses version see -list" // TODO Add logic to actually be able to download chosen version
+    proton: u32; @"?Download selected version of proton -list to see available options then '-proton <number>'"
     latest: bool; @"?Just download and install latest version"
 }
 
@@ -39,17 +39,18 @@ main :: () {
     }
 
     if args.list {
-        installed_protons := check_paths();
         print_yellow("Available versions");
         {
+            installed_protons := check_paths();
             response_body := request_info(URL);
             defer free(response_body);
             ok, parsed_data := json_parse_string(response_body, []Release);
             // I don't like this but for now it's enough
-            for install, i_index: installed_protons {
-                for *version, v_index: parsed_data {
+            for *version, v_index: parsed_data {
+                for install, i_index: installed_protons {
                     if contains(version.tag_name, install) {
                         version.tag_name = join(version.tag_name, " (installed)");
+                        break;
                     }
                 }
             }
@@ -62,7 +63,35 @@ main :: () {
     }
 
     if args.proton {
-        check_paths();
+        print_yellow("Installing selected proton version!");
+        {
+            installed_protons, steam_path := check_paths();
+            response_body := request_info(URL);
+            defer free(response_body);
+            _, parsed_data := json_parse_string(response_body, []Release);
+
+            if array_find(installed_protons, parsed_data[args.proton-1].tag_name) {
+                print("Proton % already installed! Do you want to reinstall y/n?\n", parsed_data[args.proton-1].tag_name);
+                if !user_input() return;
+            }
+
+            download_data: struct {
+                name: string;
+                url: string;
+            }
+
+            for parsed_data[args.proton-1].assets {
+                if contains(it.name, "tar.gz") && contains(it.browser_download_url, "tar.gz") {
+                    download_data = .{
+                        it.name,
+                        it.browser_download_url,
+                    };
+                    break;
+                }
+            }
+            filename := download(download_data.url, download_data.name);
+            extract_archive(filename, steam_path);
+        }
         return;
     }
 
@@ -71,23 +100,28 @@ main :: () {
         {
             installed_protons, steam_path := check_paths();
             response_body := request_info(LATEST_URL);
+            defer free(response_body);
             _, parsed_data := json_parse_string(response_body, Release);
 
             if array_find(installed_protons, parsed_data.tag_name) {
                 print("Proton % already installed! Do you want to reinstall y/n?\n", parsed_data.tag_name);
                 if !user_input() return;
             }
+            download_data: struct {
+                name: string;
+                url: string;
+            }
 
-            name, url: string;
             for parsed_data.assets {
                 if contains(it.name, "tar.gz") && contains(it.browser_download_url, "tar.gz") {
-                    name = it.name;
-                    url = it.browser_download_url;
+                    download_data = .{
+                        it.name,
+                        it.browser_download_url,
+                    };
                     break;
                 }
             }
-            free(response_body);
-            filename := download(url, name);
+            filename := download(download_data.url, download_data.name);
             extract_archive(filename, steam_path);
         }
         return;
