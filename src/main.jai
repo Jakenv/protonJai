@@ -166,6 +166,7 @@ user_input :: () -> bool {
 // I have no idea how else I could modify visit_direcotires flag otherwise so copying the function it is lol
 my_file_list :: (path: string, recursive := false, follow_directory_symlinks := true) -> []string {
     files : [..] string;
+    files.allocator = temp;
 
     visitor :: (info: *File_Visit_Info, user_data: *[..] string) {
         array_add(user_data, copy_string(info.full_name));
@@ -177,14 +178,16 @@ my_file_list :: (path: string, recursive := false, follow_directory_symlinks := 
 }
 
 check_paths :: () -> installed_protons: []string, steam_path: string {
-    steam_path := join(get_home_directory(get_username()), "/.steam/steam/compatibilitytools.d");
+    steam_path := tprint("%/.steam/steam/compatibilitytools.d", join(get_home_directory(get_username())));
     assert(is_directory(steam_path) == true);
 
     installed_protons: [..] string;
+    installed_protons.allocator = temp;
+
     paths_of_installed_protons := my_file_list(steam_path);
     for paths_of_installed_protons {
         _, _, right := split_from_right(it, #char "/");
-        array_add(*installed_protons, copy_string(right));
+        array_add(*installed_protons, right);
     }
 
     return installed_protons, steam_path;
