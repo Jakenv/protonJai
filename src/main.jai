@@ -3,8 +3,8 @@
 My_Argument_Flags :: Argument_Flags.FREE_ARGUMENTS_ALLOWED|.SORT_HELP|.ALIGN_HELP|.SHOW_HELP_ON_ERROR;
 
 Arguments :: struct {
-    list: bool; @"?List available versions"
-    proton: u32; @"?Download selected version of proton -list to see available options then '-proton <number>'"
+    list:   bool; @"?List available versions"
+    proton: u32;  @"?Download selected version of proton -list to see available options then '-proton <number>'"
     latest: bool; @"?Just download and install latest version"
 }
 
@@ -26,7 +26,7 @@ main :: () {
     }
 
     if args.latest {
-        download_latest();
+        download_proton();
         return;
     }
 }

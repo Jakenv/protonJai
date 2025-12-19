@@ -9,7 +9,7 @@ Assets :: struct {
 
 Release :: struct {
     tag_name: string;
-    assets: []Assets;
+    assets: [] Assets;
 }
 
 Request :: struct {
@@ -29,12 +29,14 @@ list_protons :: () {
         installed_protons := check_paths();
         response_body := request_info(URL);
         defer free(response_body);
-        ok, parsed_data := json_parse_string(response_body, []Release);
+
+        _, parsed_data := json_parse_string(response_body, [] Release);
+        defer free(parsed_data.data);
         // I don't like this
         for *version, v_index: parsed_data {
-            for install, i_index: installed_protons {
-                if contains(version.tag_name, install) {
-                    version.tag_name = join(version.tag_name, " (installed)");
+            for *install, i_index: installed_protons {
+                if contains(version.tag_name, install.*) {
+                    version.tag_name = tprint("% (installed)", version.tag_name);
                     break;
                 }
             }
@@ -46,13 +48,15 @@ list_protons :: () {
     }
 }
 
-download_proton :: (proton_ver: int) {
-    print_yellow("Installing selected proton version!");
+download_proton :: (proton_ver: int = 1) {
+    print_yellow("Installing proton!");
     {
         installed_protons, steam_path := check_paths();
         response_body := request_info(URL);
         defer free(response_body);
-        _, parsed_data := json_parse_string(response_body, []Release);
+
+        _, parsed_data := json_parse_string(response_body, [] Release);
+        defer free(parsed_data.data);
 
         if proton_ver-1 >= parsed_data.count {
             print("There is no Proton under [%] check again with -list\n", proton_ver);
@@ -79,38 +83,10 @@ download_proton :: (proton_ver: int) {
             }
         }
         filename := download(download_data.url, download_data.name);
-        extract_archive(filename, steam_path);
-    }
-}
-
-download_latest :: () {
-    print_yellow("Installing latest!");
-    {
-        installed_protons, steam_path := check_paths();
-        response_body := request_info(LATEST_URL);
-        defer free(response_body);
-        _, parsed_data := json_parse_string(response_body, Release);
-
-        if array_find(installed_protons, parsed_data.tag_name) {
-            print("Proton % already installed! Do you want to reinstall y/n?\n", parsed_data.tag_name);
-            if !user_input() return;
+        ok := extract_archive(filename, steam_path);
+        if !ok {
+            print("Extraction failed!");
         }
-        download_data: struct {
-            name: string;
-            url: string;
-        }
-
-        for parsed_data.assets {
-            if contains(it.name, "tar.gz") && contains(it.browser_download_url, "tar.gz") {
-                download_data = .{
-                    it.name,
-                    it.browser_download_url,
-                };
-                break;
-            }
-        }
-        filename := download(download_data.url, download_data.name);
-        extract_archive(filename, steam_path);
     }
 }
 
@@ -143,7 +119,7 @@ user_input :: () -> bool {
 }
 
 // I have no idea how else I could modify visit_direcotires flag otherwise so copying the function it is lol
-my_file_list :: (path: string, recursive := false, follow_directory_symlinks := true) -> []string {
+my_file_list :: (path: string, recursive := false, follow_directory_symlinks := true) -> [] string {
     files : [..] string;
     files.allocator = temp;
 
@@ -156,7 +132,7 @@ my_file_list :: (path: string, recursive := false, follow_directory_symlinks := 
     return files;
 }
 
-check_paths :: () -> installed_protons: []string, steam_path: string {
+check_paths :: () -> [] string, string {
     steam_path := tprint("%/.steam/steam/compatibilitytools.d", join(get_home_directory(get_username())));
     assert(is_directory(steam_path) == true);
 
@@ -164,6 +140,7 @@ check_paths :: () -> installed_protons: []string, steam_path: string {
     installed_protons.allocator = temp;
 
     paths_of_installed_protons := my_file_list(steam_path);
+
     for paths_of_installed_protons {
         _, _, right := split_from_right(it, #char "/");
         array_add(*installed_protons, right);
@@ -207,15 +184,11 @@ print_curl_stats :: (curl: *CURL) {
           cast(int)(size_downloaded / 1024.0 / 1024.0));
 }
 
-Setup_Curl :: () -> *CURL #expand {
+Setup_Curl :: (json: bool, url: string) -> *CURL, *curl_slist #expand {
     curl := curl_easy_init();
     assert(curl != null);
     `defer curl_easy_cleanup(curl);
 
-    return curl;
-}
-
-Setup_Header :: (json: bool) -> *curl_slist #expand {
     header: *curl_slist;
     header = curl_slist_append(header, "User-Agent: protonget");
 
@@ -223,16 +196,15 @@ Setup_Header :: (json: bool) -> *curl_slist #expand {
         header = curl_slist_append(header, "Contnet-Type: application/json");
     }
 
-    return header;
-}
-
-request_info :: (url: string) -> response_body: string, response_code: int, curl_code: CURLcode {
-    curl := Setup_Curl();
-    header := Setup_Header(true);
-
     curl_easy_setopt(curl, .HTTPHEADER, header);
     curl_easy_setopt(curl, .FOLLOWLOCATION, 1);
     curl_easy_setopt(curl, .URL, temp_c_string(url));
+
+    return curl, header;
+}
+
+request_info :: (url: string) -> string, int, CURLcode {
+    curl, header := Setup_Curl(true, url);
 
     builder: String_Builder;
     defer free_buffers(*builder);
@@ -248,13 +220,8 @@ request_info :: (url: string) -> response_body: string, response_code: int, curl
     return response_body, response_code, curl_code;
 }
 
-download :: (url: string, target: string) -> target: string, response_code: int, curl_code: CURLcode {
-    curl := curl_easy_init();
-    header := Setup_Header(false);
-
-    curl_easy_setopt(curl, .HTTPHEADER, header);
-    curl_easy_setopt(curl, .FOLLOWLOCATION, 1);
-    curl_easy_setopt(curl, .URL, temp_c_string(url));
+download :: (url: string, target: string) -> string, int, CURLcode {
+    curl, header := Setup_Curl(false, url);
 
     make_directory_if_it_does_not_exist(DOWNLOAD_DIR);
     set_working_directory(DOWNLOAD_DIR);
@@ -265,6 +232,7 @@ download :: (url: string, target: string) -> target: string, response_code: int,
         exit(1);
     }
     defer file_close(*out_file);
+
     request: Request;
     request.curl = curl;
     request.file = out_file;
