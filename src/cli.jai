@@ -33,9 +33,9 @@ list_protons :: () {
         _, parsed_data := json_parse_string(response_body, [] Release);
         defer free(parsed_data.data);
         // I don't like this
-        for *version, v_index: parsed_data {
-            for *install, i_index: installed_protons {
-                if contains(version.tag_name, install.*) {
+        for *version: parsed_data {
+            for *install: installed_protons {
+                if version.tag_name == install.* {
                     version.tag_name = tprint("% (installed)", version.tag_name);
                     break;
                 }
@@ -68,21 +68,19 @@ download_proton :: (proton_ver: int = 1) {
             if !user_input() return;
         }
 
-        download_data: struct {
-            name: string;
-            url: string;
-        }
+        download_data : Assets;
 
         for parsed_data[proton_ver-1].assets {
             if contains(it.name, "tar.gz") && contains(it.browser_download_url, "tar.gz") {
                 download_data = .{
                     it.name,
-                    it.browser_download_url,
+                    it.browser_download_url
                 };
                 break;
             }
         }
-        filename := download(download_data.url, download_data.name);
+
+        filename := download(download_data);
         ok := extract_archive(filename, steam_path);
         if !ok {
             print("Extraction failed!");
@@ -220,26 +218,27 @@ request_info :: (url: string) -> string, int, CURLcode {
     return response_body, response_code, curl_code;
 }
 
-download :: (url: string, target: string) -> string, int, CURLcode {
-    curl, header := Setup_Curl(false, url);
+download :: (download_data: Assets) -> string, int, CURLcode {
+    curl, header := Setup_Curl(false, download_data.browser_download_url);
 
     make_directory_if_it_does_not_exist(DOWNLOAD_DIR);
     set_working_directory(DOWNLOAD_DIR);
 
-    out_file, ok := file_open(target, for_writing=true);
+    out_file, ok := file_open(download_data.name, for_writing=true);
     if !ok {
-        print("Failed to open the output file '%' for storing the download.\n", target);
+        print("Failed to open the output file '%' for storing the download.\n", download_data.name);
         exit(1);
     }
     defer file_close(*out_file);
 
-    request: Request;
-    request.curl = curl;
-    request.file = out_file;
+    request: Request = {
+        curl = curl,
+        file = out_file,
+    };
 
     curl_easy_setopt(curl, .WRITEFUNCTION, write_file_callback);
     curl_easy_setopt(curl, .WRITEDATA, *request);
-    print("Downloading %...\n", target);
+    print("Downloading %...\n", download_data.name);
 
     curl_code := curl_easy_perform(curl);
 
@@ -248,9 +247,9 @@ download :: (url: string, target: string) -> string, int, CURLcode {
 
     print_curl_stats(curl);
     print("\n");
-    print("File % downloaded successfully!\n", target);
+    print("File % downloaded successfully!\n", download_data.name);
 
-    return target, response_code, curl_code;
+    return download_data.name, response_code, curl_code;
 }
 
 extract_archive :: (filename: string, extraction_path: string) -> bool {
