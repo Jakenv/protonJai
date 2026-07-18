@@ -71,7 +71,8 @@ download_proton :: (proton_ver: int = 1) {
         download_data : Assets;
 
         for parsed_data[proton_ver-1].assets {
-            if contains(it.name, "tar.gz") && contains(it.browser_download_url, "tar.gz") {
+            if (contains(it.name, "tar.gz") && contains(it.browser_download_url, "tar.gz")) &&
+                (!contains(it.name, "aarch") && !contains(it.browser_download_url, "aarch")) {
                 download_data = .{
                     it.name,
                     it.browser_download_url
