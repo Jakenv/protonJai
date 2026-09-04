@@ -266,7 +266,7 @@ extract_archive :: (filename: string, extraction_path: string) -> bool {
 
     defer {
         archive_read_close(a);
-        archive_read_close(a);
+        archive_read_free(a);
         archive_write_close(ext);
         archive_write_free(ext);
     }
@@ -281,9 +281,14 @@ extract_archive :: (filename: string, extraction_path: string) -> bool {
     }
 
     while archive_read_next_header(a, *entry) == ARCHIVE_OK {
-        og_path := archive_entry_pathname(entry);
+        og_path := to_string(archive_entry_pathname(entry));
 
-        final_path := join(extraction_path_for_c, to_string(og_path));
+        if contains(og_path, "-x86_64") {
+            _, left, right := split_from_left(og_path, "-x86_64");
+            og_path = join(left, right);
+        }
+
+        final_path := join(extraction_path_for_c, og_path);
         archive_entry_set_pathname(entry, to_c_string(final_path));
 
         archive_write_header(ext, entry);
